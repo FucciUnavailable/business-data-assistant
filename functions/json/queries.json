@@ -1,0 +1,6 @@
+{
+  "client_notes": {
+    "get_all_notes": "SELECT TOP (?) note_id, action_type, note_text, created_by, created_date, status FROM dbo.notes WITH (NOLOCK) WHERE client_id = ? ORDER BY created_date DESC",
+    "get_recent_notes": "SELECT TOP (?) note_id, note_text FROM dbo.notes WITH (NOLOCK) WHERE client_id = ? AND created_date >= DATEADD(day, -?, GETDATE())"
+  }
+}

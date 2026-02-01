@@ -1,0 +1,80 @@
+services:
+  # Redis cache for performance
+  redis:
+    image: redis:7-alpine
+    container_name: client-assistant-redis
+    command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    networks:
+      - assistant-network
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    container_name: client-assistant-litellm
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./litellm-config:/app/config:ro
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - AZURE_API_KEY=${AZURE_API_KEY:-}
+      - AZURE_API_BASE=${AZURE_API_BASE:-}
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
+    command: --config /app/config/config.yaml --port 4000 --detailed_debug
+    restart: unless-stopped
+    networks:
+      - assistant-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+  # OpenWebUI - main interface
+  openwebui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: client-assistant-ui
+    ports:
+      - "3000:8080"
+    volumes:
+      - openwebui-data:/app/backend/data
+      - ./functions:/app/functions:ro  # Mount functions as read-only
+    environment:
+      - OPENAI_API_KEY=${LITELLM_MASTER_KEY}
+      - OPENAI_API_BASE=http://litellm:4000/v1
+      - REDIS_URL=redis://redis:6379
+      - WEBUI_AUTH=true
+      - ENABLE_OAUTH=${ENABLE_OAUTH:-false}
+      - OAUTH_CLIENT_ID=${OAUTH_CLIENT_ID:-}
+      - OAUTH_CLIENT_SECRET=${OAUTH_CLIENT_SECRET:-}
+    depends_on:
+      redis:
+        condition: service_healthy
+      litellm:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - assistant-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  redis-data:
+    driver: local
+  openwebui-data:
+    driver: local
+
+networks:
+  assistant-network:
+    driver: bridge
